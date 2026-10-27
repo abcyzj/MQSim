@@ -22,6 +22,9 @@ namespace SSD_Components
 		~Data_Cache_Manager_Flash_Simple();
 		void Execute_simulator_event(MQSimEngine::Sim_Event* ev);
 		void Setup_triggers();
+		bool Supports_local_read(stream_id_type stream) const override {
+			return stream < stream_count && caching_mode_per_input_stream[stream] == Caching_Mode::TURNED_OFF;
+		}
 		void Do_warmup(std::vector<Utils::Workload_Statistics*> workload_stats);
 	private:
 		NVM_PHY_ONFI * flash_controller;

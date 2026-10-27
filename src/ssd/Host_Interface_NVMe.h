@@ -4,6 +4,7 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <memory>
 #include "../sim/Sim_Event.h"
 #include "Host_Interface_Base.h"
 #include "User_Request.h"
@@ -46,6 +47,7 @@ class Input_Stream_Manager_NVMe : public Input_Stream_Manager_Base
 public:
 	Input_Stream_Manager_NVMe(Host_Interface_Base *host_interface, uint16_t queue_fetch_szie);
 	unsigned int Queue_fetch_size;
+	void Prepare_local_read(User_Request* request);
 	stream_id_type Create_new_stream(IO_Flow_Priority_Class::Priority priority_class, LHA_type start_logical_sector_address, LHA_type end_logical_sector_address,
 									 uint64_t submission_queue_base_address, uint16_t submission_queue_size,
 									 uint64_t completion_queue_base_address, uint16_t completion_queue_size);
@@ -93,11 +95,20 @@ public:
 	void Start_simulation();
 	void Validate_simulation_config();
 	void Execute_simulator_event(MQSimEngine::Sim_Event *);
+	// PoC: SIMPLE/TURNED_OFF, existing namespace, sector-aligned reads only.
+	struct LocalReadCompletion { uint64_t token; io_request_id_type request_id; unsigned bytes; sim_time_type time; };
+	uint64_t Submit_local_read(stream_id_type stream, LHA_type lba, unsigned sectors);
+	std::vector<LocalReadCompletion> Take_local_completions();
+	size_t Pending_local_reads() const { return local_reads.size(); }
 	uint16_t Get_submission_queue_depth();
 	uint16_t Get_completion_queue_depth();
 	void Report_results_in_XML(std::string name_prefix, Utils::XmlWriter &xmlwriter);
 
 private:
+	void Handle_local_serviced_request(User_Request* request) override;
+	uint64_t next_local_token = 1;
+	std::map<uint64_t, std::unique_ptr<User_Request>> local_reads;
+	std::vector<LocalReadCompletion> local_completions;
 	uint16_t submission_queue_depth, completion_queue_depth;
 	unsigned int no_of_input_streams;
 };

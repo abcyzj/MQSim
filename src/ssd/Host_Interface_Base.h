@@ -1,6 +1,7 @@
 #ifndef HOST_INTERFACE_BASE_H
 #define HOST_INTERFACE_BASE_H
 
+#include <stdexcept>
 #include <vector>
 #include "../sim/Sim_Object.h"
 #include "../sim/Sim_Reporter.h"
@@ -128,6 +129,7 @@ namespace SSD_Components
 		LHA_type Get_max_logical_sector_address();
 		unsigned int Get_no_of_LHAs_in_an_NVM_write_unit();
 	protected:
+		virtual void Handle_local_serviced_request(User_Request*) { throw std::logic_error("Unsupported local route"); }
 		HostInterface_Types type;
 		LHA_type max_logical_sector_address;
 		unsigned int sectors_per_page;
@@ -147,7 +149,11 @@ namespace SSD_Components
 
 		static void handle_user_request_serviced_signal_from_cache(User_Request* user_request)
 		{
-			_my_instance->input_stream_manager->Handle_serviced_request(user_request);
+			if (user_request->Completion_route == RequestCompletionRoute::DEVICE_LOCAL) {
+				_my_instance->Handle_local_serviced_request(user_request);
+			} else {
+				_my_instance->input_stream_manager->Handle_serviced_request(user_request);
+			}
 		}
 
 		static void handle_user_memory_transaction_serviced_signal_from_cache(NVM_Transaction* transaction)

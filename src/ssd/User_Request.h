@@ -11,11 +11,16 @@
 namespace SSD_Components
 {
 	enum class UserRequestType { READ, WRITE };
+	enum class RequestCompletionRoute { HOST, DEVICE_LOCAL };
 	class NVM_Transaction;
 	class User_Request
 	{
 	public:
 		User_Request();
+		// HOST is the unchanged native path. Local requests are owned by the interface.
+		RequestCompletionRoute Completion_route = RequestCompletionRoute::HOST;
+		uint64_t Local_token = 0;
+		bool Local_completion_queued = false;
 		IO_Flow_Priority_Class::Priority Priority_class;
 		io_request_id_type ID;
 		LHA_type Start_LBA;
