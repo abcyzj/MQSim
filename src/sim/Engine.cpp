@@ -15,6 +15,8 @@ namespace MQSimEngine
 
 	void Engine::Reset()
 	{
+		queue_changed = {};
+        dispatching = false;
 		_EventList->Clear();
 		_ObjectList.clear();
 		_sim_time = 0;
@@ -125,16 +127,73 @@ namespace MQSimEngine
 
 	Sim_Event* Engine::Register_sim_event(sim_time_type fireTime, Sim_Object* targetObject, void* parameters, int type)
 	{
+        if (fireTime < _sim_time) throw std::logic_error("MQSim event before now");
 		Sim_Event* ev = new Sim_Event(fireTime, targetObject, parameters, type);
 		DEBUG("RegisterEvent " << fireTime << " " << targetObject)
 		_EventList->Insert_sim_event(ev);
+        if (queue_changed) queue_changed();
 		return ev;
 	}
 
 	void Engine::Ignore_sim_event(Sim_Event* ev)
 	{
 		ev->Ignore = true;
+        if (queue_changed) queue_changed();
 	}
+
+    std::optional<sim_time_type> Engine::Peek_next_time()
+    {
+        // Ignored events own only their event envelope, never Parameters.
+        while (_EventList->Count) {
+            auto* node = _EventList->Get_min_node();
+            auto* ev = node->FirstSimEvent;
+            if (!ev->Ignore) return ev->Fire_time;
+            node->FirstSimEvent = ev->Next_event;
+            if (!node->FirstSimEvent) _EventList->Remove(node);
+            delete ev;
+        }
+        return std::nullopt;
+    }
+
+    void Engine::Synchronize_now(sim_time_type now)
+    {
+        if (!started) throw std::logic_error("MQSim synchronize before initialize");
+        if (now < _sim_time) throw std::logic_error("MQSim time reversal");
+        const auto next = Peek_next_time();
+        if (next && *next < now) throw std::logic_error("MQSim unprocessed event before SST now");
+        _sim_time = now;
+    }
+
+    size_t Engine::Dispatch_current_time(sim_time_type now, size_t limit)
+    {
+        if (dispatching) throw std::logic_error("MQSim recursive dispatch");
+        Synchronize_now(now);
+        dispatching = true;
+        size_t count = 0;
+        try {
+            while (!stop) {
+                const auto next = Peek_next_time();
+                if (!next || *next != now) break;
+                if (count == limit) throw std::logic_error("MQSim same-time dispatch limit exceeded");
+                auto* node = _EventList->Get_min_node();
+                auto* ev = node->FirstSimEvent;
+                node->FirstSimEvent = ev->Next_event;
+                if (!node->FirstSimEvent) _EventList->Remove(node);
+                // Pop before callback: same-time additions append after existing FIFO.
+                try { ev->Target_sim_object->Execute_simulator_event(ev); }
+                catch (...) { delete ev; throw; }
+                delete ev;
+                ++count;
+            }
+        } catch (...) { dispatching = false; throw; }
+        dispatching = false;
+        return count;
+    }
+
+    void Engine::Set_event_queue_changed_callback(std::function<void()> callback)
+    {
+        queue_changed = std::move(callback);
+    }
 
 	bool Engine::Is_integrated_execution_mode()
 	{
