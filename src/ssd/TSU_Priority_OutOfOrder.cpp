@@ -86,6 +86,8 @@ TSU_Priority_OutOfOrder::~TSU_Priority_OutOfOrder()
             delete[] UserReadTRQueue[channelID][chipId];
             delete[] UserWriteTRQueue[channelID][chipId];
         }
+        delete[] UserReadTRQueue[channelID];
+        delete[] UserWriteTRQueue[channelID];
         delete[] nextPriorityClassRead[channelID];
         delete[] nextPriorityClassWrite[channelID];
         delete[] currentWeightRead[channelID];

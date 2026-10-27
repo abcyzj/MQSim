@@ -53,8 +53,11 @@ namespace MQSimEngine
 	}
 
 	/// This is the main method of simulator which starts simulation process.
-	void Engine::Start_simulation()
+	void Engine::Initialize_simulation()
 	{
+		if (started) {
+			throw std::logic_error("MQSim engine already initialized");
+		}
 		started = true;
 
 		for(std::unordered_map<sim_object_id_type, Sim_Object*>::iterator obj = _ObjectList.begin();
@@ -77,6 +80,11 @@ namespace MQSimEngine
 			obj->second->Start_simulation();
 		}
 		
+	}
+
+	void Engine::Start_simulation()
+	{
+		Initialize_simulation();
 		Sim_Event* ev = NULL;
 		while (true) {
 			if (_EventList->Count == 0 || stop) {

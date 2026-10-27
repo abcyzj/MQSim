@@ -26,6 +26,8 @@ namespace MQSimEngine
 			return _triggersSetUp;
 		}
 
+		virtual ~Sim_Object() = default;
+
 		//The Start function is invoked at the start phase of simulation to perform initialization
 		virtual void Start_simulation() = 0;
 

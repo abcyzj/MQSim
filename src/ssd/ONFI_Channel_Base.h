@@ -11,6 +11,7 @@ namespace SSD_Components
 	{
 	public:
 		ONFI_Channel_Base(flash_channel_ID_type channelID, unsigned int chipCount, NVM::FlashMemory::Flash_Chip** flashChips, ONFI_Protocol type);
+		~ONFI_Channel_Base() override { delete[] Chips; }
 		flash_channel_ID_type ChannelID;
 		NVM::FlashMemory::Flash_Chip** Chips;
 		ONFI_Protocol Type;

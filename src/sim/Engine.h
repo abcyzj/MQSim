@@ -30,6 +30,8 @@ namespace MQSimEngine {
 		void AddObject(Sim_Object* obj);
 		Sim_Object* GetObject(sim_object_id_type object_id);
 		void RemoveObject(Sim_Object* obj);
+		// Initialize objects at time zero without consuming backend events.
+		void Initialize_simulation();
 		void Start_simulation();
 		void Stop_simulation();
 		bool Has_started();

@@ -4,6 +4,8 @@
 #include<cstdint>
 #include<string>
 #include<iostream>
+#include<sstream>
+#include<stdexcept>
 
 typedef uint64_t sim_time_type;
 typedef uint16_t stream_id_type;
@@ -17,12 +19,12 @@ typedef sim_time_type data_timestamp_type;
 typedef std::string sim_object_id_type;
 
 #define CurrentTimeStamp Simulator->Time()
-#define PRINT_ERROR(MSG) {\
-							std::cerr << "ERROR:" ;\
-							std::cerr << MSG << std::endl; \
-							std::cin.get();\
-							exit(1);\
-						 }
+// Library errors propagate to the embedding application; never read stdin.
+#define PRINT_ERROR(MSG) { \
+    std::ostringstream mqsim_error; \
+    mqsim_error << MSG; \
+    throw std::runtime_error(mqsim_error.str()); \
+}
 #define PRINT_MESSAGE(M) std::cout << M << std::endl;
 #define DEBUG(M) //std::cout<<M<<std::endl;
 #define DEBUG2(M) //std::cout<<M<<std::endl;
