@@ -101,6 +101,7 @@ namespace NVM
 
 		void Flash_Chip::start_command_execution(Flash_Command* command)
 		{
+            if(MQSimObservation::sink) observation_array_start[command->Address[0].DieID]=Simulator->Time();
 			Die* targetDie = Dies[command->Address[0].DieID];
 
 			//If this is a simple command (not multiplane) then there should be only one address
@@ -129,6 +130,11 @@ namespace NVM
 
 		void Flash_Chip::finish_command_execution(Flash_Command* command)
 		{
+            if(MQSimObservation::sink) {
+                auto die=command->Address[0].DieID;
+                MQSimObservation::interval("array",observation_array_start.at(die),Simulator->Time(),ChannelID,ChipID,die);
+                observation_array_start.erase(die);
+            }
 			Die* targetDie = Dies[command->Address[0].DieID];
 
 			targetDie->STAT_TotalReadTime += Get_command_execution_latency(command->CommandCode, command->Address[0].PageID);

@@ -10,6 +10,8 @@
 #include "Die.h"
 #include "Flash_Command.h"
 #include <vector>
+#include "../../sim/Observation.h"
+#include <map>
 #include <stdexcept>
 
 namespace NVM
@@ -45,6 +47,7 @@ namespace NVM
 			}
 			void EndCMDXfer(Flash_Command* command)//End transferring write data to the Flash chip
 			{
+                MQSimObservation::interval("command_bus",lastTransferStart,Simulator->Time(),ChannelID,ChipID,command->Address[0].DieID);
 				this->STAT_totalXferTime += (Simulator->Time() - this->lastTransferStart);
 				if (this->idleDieNo != die_no)
 					STAT_totalOverlappedXferExecTime += (Simulator->Time() - lastTransferStart);
@@ -56,6 +59,7 @@ namespace NVM
 			}
 			void EndCMDDataInXfer(Flash_Command* command)//End transferring write data of a group of multi-plane transactions to the Flash chip
 			{
+                MQSimObservation::interval("command_data_in_bus",lastTransferStart,Simulator->Time(),ChannelID,ChipID,command->Address[0].DieID);
 				this->STAT_totalXferTime += (Simulator->Time() - this->lastTransferStart);
 				if (this->idleDieNo != die_no)
 					STAT_totalOverlappedXferExecTime += (Simulator->Time() - lastTransferStart);
@@ -67,6 +71,7 @@ namespace NVM
 			}
 			void EndDataOutXfer(Flash_Command* command)
 			{
+                MQSimObservation::interval("data_out_bus",lastTransferStart,Simulator->Time(),ChannelID,ChipID,command->Address[0].DieID);
 				this->STAT_totalXferTime += (Simulator->Time() - this->lastTransferStart);
 				if (this->idleDieNo != die_no)
 					STAT_totalOverlappedXferExecTime += (Simulator->Time() - lastTransferStart);
@@ -119,7 +124,8 @@ namespace NVM
 			void Report_results_in_XML(std::string name_prefix, Utils::XmlWriter& xmlwriter);
 			LPA_type Get_metadata(flash_die_ID_type die_id, flash_plane_ID_type plane_id, flash_block_ID_type block_id, flash_page_ID_type page_id);//A simplification to decrease the complexity of GC execution! The GC unit may need to know the metadata of a page to decide if a page is valid or invalid. 
 		private:
-			Flash_Technology_Type flash_technology;
+			std::map<unsigned,sim_time_type> observation_array_start;
+            Flash_Technology_Type flash_technology;
 			Internal_Status status;
 			unsigned int idleDieNo;
 			Die** Dies;
