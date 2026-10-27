@@ -174,7 +174,11 @@ namespace MQSimEngine
             while (!stop) {
                 const auto next = Peek_next_time();
                 if (!next || *next != now) break;
-                if (count == limit) throw std::logic_error("MQSim same-time dispatch limit exceeded");
+                if (count == limit) {
+                    auto* pending = _EventList->Get_min_node()->FirstSimEvent;
+                    throw std::logic_error("MQSim same-time dispatch limit exceeded time=" + std::to_string(now)
+                        + " target=" + pending->Target_sim_object->ID() + " type=" + std::to_string(pending->Type));
+                }
                 auto* node = _EventList->Get_min_node();
                 auto* ev = node->FirstSimEvent;
                 node->FirstSimEvent = ev->Next_event;
