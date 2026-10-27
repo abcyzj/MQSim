@@ -2,6 +2,7 @@
 #define ADDRESS_MAPPING_UNIT_PAGE_LEVEL
 
 #include <unordered_map>
+#include <sstream>
 #include <map>
 #include <queue>
 #include <set>
@@ -45,6 +46,16 @@ namespace SSD_Components
 	{
 	public:
 		Cached_Mapping_Table(unsigned int capacity);
+        std::string Snapshot_order() const {
+            std::ostringstream out;
+            for(const auto& entry:lruList) out<<entry.first<<":"<<int(entry.second->Status)<<":"<<entry.second->Dirty<<",";
+            return out.str();
+        }
+        bool Snapshot(stream_id_type stream,LPA_type lpa,PPA_type& ppa,page_status_type& state) const {
+            auto it=addressMap.find(LPN_TO_UNIQUE_KEY(stream,lpa));
+            if(it==addressMap.end() || it->second->Status!=CMTEntryStatus::VALID) return false;
+            ppa=it->second->PPA;state=it->second->WrittenStateBitmap;return true;
+        }
 		~Cached_Mapping_Table();
 		bool Exists(const stream_id_type streamID, const LPA_type lpa);
 		PPA_type Retrieve_ppa(const stream_id_type streamID, const LPA_type lpa);
@@ -148,7 +159,14 @@ namespace SSD_Components
 
 		void Allocate_address_for_preconditioning(const stream_id_type stream_id, std::map<LPA_type, page_status_type>& lpa_list, std::vector<double>& steady_state_distribution);
 		int Bring_to_CMT_for_preconditioning(stream_id_type stream_id, LPA_type lpa);
-		unsigned int Get_cmt_capacity();
+		// Research snapshot: no CMT lookup, LRU update, or event generation.
+        std::string Snapshot_cmt(stream_id_type stream) const {return domains[stream]->CMT->Snapshot_order();}
+        void Snapshot_mapping(stream_id_type stream, LPA_type lpa, PPA_type& ppa, page_status_type& state) const {
+            if(domains[stream]->CMT->Snapshot(stream,lpa,ppa,state)) return;
+            ppa=domains[stream]->GlobalMappingTable[lpa].PPA;
+            state=domains[stream]->GlobalMappingTable[lpa].WrittenStateBitmap;
+        }
+        unsigned int Get_cmt_capacity();
 		unsigned int Get_current_cmt_occupancy_for_stream(stream_id_type stream_id);
 		void Translate_lpa_to_ppa_and_dispatch(const std::list<NVM_Transaction*>& transactionList);
 		void Get_data_mapping_info_for_gc(const stream_id_type stream_id, const LPA_type lpa, PPA_type& ppa, page_status_type& page_state);

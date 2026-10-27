@@ -6,6 +6,7 @@
 #include "PCIe_Message.h"
 #include "PCIe_Link.h"
 #include "Host_IO_Request.h"
+#include <functional>
 #include "IO_Flow_Base.h"
 #include "SATA_HBA.h"
 
@@ -20,7 +21,9 @@ namespace Host_Components
 	public:
 		PCIe_Root_Complex(PCIe_Link* pcie_link, HostInterface_Types SSD_device_type, SATA_HBA* sata_hba, std::vector<Host_Components::IO_Flow_Base*>* IO_flows);
 		
-		void Consume_pcie_message(PCIe_Message* messages)//Modern processors support DDIO, where all writes to memory are going through LLC
+		// Optional observer; invoked only after native link delivery.
+        std::function<void(uint64_t, unsigned)> data_arrived;
+        void Consume_pcie_message(PCIe_Message* messages)//Modern processors support DDIO, where all writes to memory are going through LLC
 		{
 			switch (messages->Type)
 			{
@@ -28,7 +31,9 @@ namespace Host_Components
 				Read_from_memory(messages->Address, (unsigned int)(intptr_t)messages->Payload);
 				break;
 			case PCIe_Message_Type::WRITE_REQ:
-				Write_to_memory(messages->Address, messages->Payload);
+				if (messages->Address >= DATA_MEMORY_REGION && data_arrived)
+                    data_arrived(messages->Address, messages->Payload_size);
+                Write_to_memory(messages->Address, messages->Payload);
 				break;
 			default:
 				break;

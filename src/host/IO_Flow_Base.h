@@ -52,7 +52,7 @@ namespace Host_Components
 		IO_Flow_Priority_Class::Priority Priority_class() { return priority_class; }
 		virtual Host_IO_Request* Generate_next_request() = 0;
 		virtual void NVMe_consume_io_request(Completion_Queue_Entry*);
-		Submission_Queue_Entry* NVMe_read_sqe(uint64_t address);
+		virtual Submission_Queue_Entry* NVMe_read_sqe(uint64_t address);
 		const NVMe_Queue_Pair* Get_nvme_queue_pair_info();
 		virtual void SATA_consume_io_request(Host_IO_Request* request);
 		LHA_type Get_start_lsa_on_device();
