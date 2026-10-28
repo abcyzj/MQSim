@@ -47,6 +47,7 @@ class Input_Stream_Manager_NVMe : public Input_Stream_Manager_Base
 public:
 	Input_Stream_Manager_NVMe(Host_Interface_Base *host_interface, uint16_t queue_fetch_szie);
 	unsigned int Queue_fetch_size;
+	void Validate_local_read(stream_id_type stream_id, LHA_type lba, unsigned sectors) const;
 	void Prepare_local_read(User_Request* request);
 	stream_id_type Create_new_stream(IO_Flow_Priority_Class::Priority priority_class, LHA_type start_logical_sector_address, LHA_type end_logical_sector_address,
 									 uint64_t submission_queue_base_address, uint16_t submission_queue_size,
@@ -95,8 +96,22 @@ public:
 	void Start_simulation();
 	void Validate_simulation_config();
 	void Execute_simulator_event(MQSimEngine::Sim_Event *);
-	// PoC: SIMPLE/TURNED_OFF, existing namespace, sector-aligned reads only.
-	struct LocalReadCompletion { uint64_t token; io_request_id_type request_id; unsigned bytes; sim_time_type time; };
+	// SIMPLE/TURNED_OFF, existing namespace, sector-aligned reads only.
+	// Value snapshots contain no request/transaction pointers. Native route is unchanged.
+	struct LocalTransaction {
+        uint64_t id, lpa, bitmap;
+        unsigned bytes;
+        bool completed = false;
+        sim_time_type time = 0;
+    };
+    struct LocalReadCompletion {
+        uint64_t token; io_request_id_type request_id; unsigned bytes; sim_time_type time;
+        LHA_type lba; unsigned sectors; stream_id_type stream;
+        sim_time_type submitted;
+        std::vector<LocalTransaction> transactions;
+    };
+    LocalReadCompletion Inspect_local_read(uint64_t token) const;
+	void Validate_local_read(stream_id_type stream, LHA_type lba, unsigned sectors) const;
 	uint64_t Submit_local_read(stream_id_type stream, LHA_type lba, unsigned sectors);
 	std::vector<LocalReadCompletion> Take_local_completions();
 	size_t Pending_local_reads() const { return local_reads.size(); }
@@ -106,7 +121,9 @@ public:
 
 private:
 	void Handle_local_serviced_request(User_Request* request) override;
-	uint64_t next_local_token = 1;
+	void Handle_local_transaction(NVM_Transaction* transaction) override;
+	uint64_t next_local_token = 1, next_local_transaction = 1;
+	std::map<uint64_t, LocalReadCompletion> local_progress;
 	std::map<uint64_t, std::unique_ptr<User_Request>> local_reads;
 	std::vector<LocalReadCompletion> local_completions;
 	uint16_t submission_queue_depth, completion_queue_depth;

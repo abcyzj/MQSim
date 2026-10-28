@@ -18,6 +18,8 @@ namespace SSD_Components
 	public:
 		NVM_Transaction(stream_id_type stream_id, Transaction_Source_Type source, Transaction_Type type, User_Request* user_request, IO_Flow_Priority_Class::Priority priority_class) :
 			Stream_id(stream_id), Source(source), Type(type), UserIORequest(user_request), Priority_class(priority_class), Issue_time(Simulator->Time()), STAT_execution_time(INVALID_TIME), STAT_transfer_time(INVALID_TIME) {}
+		// Stable only for the extended local route; zero for native/background transactions.
+		uint64_t Local_transaction_id = 0;
 		stream_id_type Stream_id;
 		Transaction_Source_Type Source;
 		Transaction_Type Type;

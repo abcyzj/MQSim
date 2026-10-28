@@ -414,30 +414,44 @@ void Host_Interface_NVMe::Execute_simulator_event(MQSimEngine::Sim_Event *event)
 	auto it = local_reads.find(request->Local_token);
 	if (it == local_reads.end() || it->second.get() != request || !request->Local_completion_queued)
 		throw std::logic_error("Invalid local cleanup");
-	LocalReadCompletion completed{request->Local_token, request->ID, request->Size_in_byte, Simulator->Time()};
+	auto completed = local_progress.at(request->Local_token);
+	completed.time = Simulator->Time();
 	// PHY/cache signal fanout has unwound. No NVMe SQE, DMA data, SQ or CQ belongs to this request.
+	local_progress.erase(request->Local_token);
 	local_reads.erase(it);
 	local_completions.push_back(completed);
 }
 
+void Input_Stream_Manager_NVMe::Validate_local_read(stream_id_type stream_id, LHA_type lba, unsigned sectors) const
+{
+	if (stream_id >= input_streams.size()) throw std::invalid_argument("Invalid local stream");
+	auto* stream = static_cast<Input_Stream_NVMe*>(input_streams[stream_id]);
+	if (!sectors || lba < stream->Start_logical_sector_address
+		|| lba > stream->End_logical_sector_address
+		|| sectors - 1 > stream->End_logical_sector_address - lba)
+		throw std::invalid_argument("Invalid local LBA range");
+}
+
 void Input_Stream_Manager_NVMe::Prepare_local_read(User_Request* request)
 {
-	if (request->Stream_id >= input_streams.size()) throw std::invalid_argument("Invalid local stream");
+	Validate_local_read(request->Stream_id, request->Start_LBA, request->SizeInSectors);
 	auto* stream = static_cast<Input_Stream_NVMe*>(input_streams[request->Stream_id]);
-	if (!request->SizeInSectors || request->Start_LBA < stream->Start_logical_sector_address
-		|| request->Start_LBA > stream->End_logical_sector_address
-		|| request->SizeInSectors - 1 > stream->End_logical_sector_address - request->Start_LBA)
-		throw std::invalid_argument("Invalid local LBA range");
 	request->Priority_class = stream->Priority_class;
 	segment_user_request(request);
 }
 
+void Host_Interface_NVMe::Validate_local_read(stream_id_type stream, LHA_type lba, unsigned sectors) const
+{
+    if (!Simulator->Has_started()) throw std::logic_error("Local submit before initialization");
+    if (!cache->Supports_local_read(stream)) throw std::invalid_argument("Unsupported: local read requires SIMPLE/TURNED_OFF");
+    if (!sectors || sectors > UINT32_MAX / SECTOR_SIZE_IN_BYTE || !next_local_token)
+        throw std::invalid_argument("Invalid local read size or exhausted token");
+    static_cast<Input_Stream_Manager_NVMe*>(input_stream_manager)->Validate_local_read(stream, lba, sectors);
+}
+
 uint64_t Host_Interface_NVMe::Submit_local_read(stream_id_type stream, LHA_type lba, unsigned sectors)
 {
-	if (!Simulator->Has_started()) throw std::logic_error("Local submit before initialization");
-	if (!cache->Supports_local_read(stream)) throw std::invalid_argument("Unsupported: local read requires SIMPLE/TURNED_OFF");
-	if (!sectors || sectors > UINT32_MAX / SECTOR_SIZE_IN_BYTE || !next_local_token)
-		throw std::invalid_argument("Invalid local read size or exhausted token");
+    Validate_local_read(stream, lba, sectors);
 	auto request = std::make_unique<User_Request>();
 	request->Completion_route = RequestCompletionRoute::DEVICE_LOCAL;
 	request->Local_token = next_local_token;
@@ -450,12 +464,55 @@ uint64_t Host_Interface_NVMe::Submit_local_read(stream_id_type stream, LHA_type 
 	request->STAT_ResponseTime = 0;
 	request->IO_command_info = nullptr;
 	request->Data = nullptr;
-	static_cast<Input_Stream_Manager_NVMe*>(input_stream_manager)->Prepare_local_read(request.get());
+	try {
+        static_cast<Input_Stream_Manager_NVMe*>(input_stream_manager)->Prepare_local_read(request.get());
+        if (request->Transaction_list.size() > UINT64_MAX - next_local_transaction)
+            throw std::overflow_error("Local transaction ID exhausted");
+    } catch (...) {
+        // Segmentation has not handed ownership to cache/FTL/PHY yet.
+        for (auto* t : request->Transaction_list) delete static_cast<NVM_Transaction_Flash_RD*>(t);
+        request->Transaction_list.clear();
+        throw;
+    }
+    LocalReadCompletion progress{next_local_token, request->ID, request->Size_in_byte, 0,
+        lba, sectors, stream, Simulator->Time(), {}};
+    for (auto* t : request->Transaction_list) {
+        auto* tr = static_cast<NVM_Transaction_Flash_RD*>(t);
+        tr->Local_transaction_id = next_local_transaction++;
+        progress.transactions.push_back({tr->Local_transaction_id, tr->LPA, tr->read_sectors_bitmap,
+            tr->Data_and_metadata_size_in_byte});
+    }
+    local_progress.emplace(next_local_token, std::move(progress));
 	auto* raw = request.get();
 	const auto token = next_local_token++;
 	local_reads.emplace(token, std::move(request));
 	broadcast_user_request_arrival_signal(raw);
 	return token;
+}
+
+Host_Interface_NVMe::LocalReadCompletion Host_Interface_NVMe::Inspect_local_read(uint64_t token) const
+{
+    return local_progress.at(token);
+}
+
+void Host_Interface_NVMe::Handle_local_transaction(NVM_Transaction* transaction)
+{
+    auto* request = transaction->UserIORequest;
+    auto owner = local_reads.find(request->Local_token);
+    if (owner == local_reads.end() || owner->second.get() != request || request->Local_completion_queued)
+        throw std::logic_error("Unowned/late local transaction");
+    auto& progress = local_progress.at(request->Local_token);
+    for (auto& tr : progress.transactions) {
+        if (tr.id != transaction->Local_transaction_id) continue;
+        if (tr.completed) throw std::logic_error("Duplicate local transaction");
+        auto* flash = static_cast<NVM_Transaction_Flash_RD*>(transaction);
+        if (transaction->Type != Transaction_Type::READ || flash->LPA != tr.lpa ||
+            flash->Data_and_metadata_size_in_byte != tr.bytes || flash->read_sectors_bitmap != tr.bitmap)
+            throw std::logic_error("Local transaction metadata mismatch");
+        tr.completed = true; tr.time = Simulator->Time();
+        return;
+    }
+    throw std::logic_error("Unknown local transaction");
 }
 
 void Host_Interface_NVMe::Handle_local_serviced_request(User_Request* request)
@@ -465,7 +522,9 @@ void Host_Interface_NVMe::Handle_local_serviced_request(User_Request* request)
 		throw std::logic_error("Unowned local completion");
 	if (!request->Transaction_list.empty() || request->Sectors_serviced_from_cache)
 		throw std::logic_error("Premature local completion");
-	if (request->Local_completion_queued) throw std::logic_error("Duplicate local completion");
+	for (const auto& tr : local_progress.at(request->Local_token).transactions)
+        if (!tr.completed) throw std::logic_error("Missing local transaction completion");
+    if (request->Local_completion_queued) throw std::logic_error("Duplicate local completion");
 	request->Local_completion_queued = true;
 	// Same-time event: all cache and PHY observers may still inspect the request.
 	Simulator->Register_sim_event(Simulator->Time(), this, request, 1);
