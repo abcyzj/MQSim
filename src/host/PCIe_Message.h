@@ -2,11 +2,12 @@
 #define PCIE_MESSAGE_H
 
 #include<cstdint>
+#include<functional>
 
 namespace Host_Components
 {
 	enum class PCIe_Destination_Type {HOST, DEVICE};
-	enum class PCIe_Message_Type {READ_REQ, WRITE_REQ, READ_COMP};
+	enum class PCIe_Message_Type {READ_REQ, WRITE_REQ, READ_COMP, PLATFORM};
 	
 	class PCIe_Message
 	{
@@ -16,6 +17,9 @@ namespace Host_Components
 		void* Payload;
 		unsigned int Payload_size;
 		uint64_t Address;
+		// Extended envelopes are consumed by the link endpoint, never by NVMe.
+		uint64_t Link_id = 0, Platform_id = 0;
+		std::function<void()> Platform_arrived;
 	};
 }
 

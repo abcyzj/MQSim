@@ -24,14 +24,31 @@ namespace Host_Components
 			int tlp_max_payload_size = 128,
 			int dllp_ovehread = 6,
 			int ph_overhead = 2);
-		void Deliver(PCIe_Message*);
+		~PCIe_Link();
+        struct Transfer {
+            uint64_t id, platform_id, time, payload, wire, service;
+            PCIe_Destination_Type destination;
+            PCIe_Message_Type type;
+        };
+        // Read-only observation; no second charge or scheduler.
+        std::function<void(const char*, const Transfer&)> observe;
+        uint64_t Wire_bytes(const PCIe_Message& message) const {
+            if (message.Type == PCIe_Message_Type::READ_REQ) return packet_overhead + 4;
+            uint64_t p = message.Payload_size;
+            return p + (p / tlp_max_payload_size + (p % tlp_max_payload_size != 0)) * packet_overhead;
+        }
+        void Deliver(PCIe_Message*);
 		void Start_simulation();
 		void Validate_simulation_config();
 		void Execute_simulator_event(MQSimEngine::Sim_Event*);
 		void Set_root_complex(PCIe_Root_Complex*);
 		void Set_pcie_switch(PCIe_Switch*);
 	private:
-		PCIe_Root_Complex* root_complex;
+		uint64_t next_link_id = 0;
+        bool delivering_host = false, delivering_device = false;
+        void notify(const char*, PCIe_Message*);
+        void start_transfer(PCIe_Message*);
+        PCIe_Root_Complex* root_complex;
 		PCIe_Switch* pcie_switch;
 		double lane_bandwidth_GBPs;//GB/s
 		int lane_count;
@@ -44,6 +61,7 @@ namespace Host_Components
 		sim_time_type estimate_transfer_time(PCIe_Message* message)
 		{
 			switch (message->Type) {
+				case PCIe_Message_Type::PLATFORM:
 				case PCIe_Message_Type::READ_COMP:
 				case PCIe_Message_Type::WRITE_REQ:
 				{
