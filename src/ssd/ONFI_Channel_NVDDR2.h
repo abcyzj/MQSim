@@ -5,8 +5,8 @@
 #include "ONFI_Channel_Base.h"
 
 
-#define NVDDR2DataInTransferTime(X,Y) ((X / Y->ChannelWidth / 2) * Y->TwoUnitDataInTime)
-#define NVDDR2DataOutTransferTime(X,Y) ((X / Y->ChannelWidth / 2) * Y->TwoUnitDataOutTime)
+#define NVDDR2DataInTransferTime(X,Y) (Y->Data_transfer_time(X, Y->TwoUnitDataInTime))
+#define NVDDR2DataOutTransferTime(X,Y) (Y->Data_transfer_time(X, Y->TwoUnitDataOutTime))
 
 
 namespace SSD_Components
@@ -34,6 +34,15 @@ namespace SSD_Components
 		sim_time_type EraseSuspendCommandTime;
 
 		unsigned int ChannelWidth; //channel width in bytes
+		unsigned int TransferRateMTps = 0;
+		sim_time_type Data_transfer_time(sim_time_type bytes, sim_time_type legacy_delay) const
+		{
+			if (!TransferRateMTps)
+				return (bytes / ChannelWidth / 2) * legacy_delay;
+			const sim_time_type divisor = sim_time_type(ChannelWidth) * TransferRateMTps;
+			const sim_time_type numerator = bytes * 1000;
+			return numerator / divisor + (numerator % divisor != 0);
+		}
 	private:
 		//Data input/ouput timing parameters related to bus frequency
 		sim_time_type t_RC; //Average RE cycle time, e.g. 6ns

@@ -95,6 +95,9 @@ SSD_Device::SSD_Device(Device_Parameter_Set *parameters, std::vector<IO_Flow_Par
 				channels[channel_cntr] = new SSD_Components::ONFI_Channel_NVDDR2(channel_cntr, parameters->Chip_No_Per_Channel,
 																				 chips, parameters->Flash_Channel_Width,
 																				 (sim_time_type)((double)1000 / parameters->Channel_Transfer_Rate) * 2, (sim_time_type)((double)1000 / parameters->Channel_Transfer_Rate) * 2);
+				// High-speed configurations require transaction-level rounding.
+				if (parameters->Channel_Transfer_Rate > 1000)
+					channels[channel_cntr]->TransferRateMTps = parameters->Channel_Transfer_Rate;
 				device->Channels.push_back(channels[channel_cntr]); //Channels should not be added to the simulator core, they are passive object that do not handle any simulation event
 			}
 
