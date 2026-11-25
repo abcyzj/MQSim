@@ -22,6 +22,8 @@ class FTL;
 class TSU_Priority_OutOfOrder : public TSU_Base
 {
 public:
+    // Research opt-in for device-local reads. Ordinary scheduling remains the default.
+    void Enable_local_read_die_admission() { local_read_die_admission = true; }
     TSU_Priority_OutOfOrder(const sim_object_id_type &id,
                             FTL *ftl,
                             NVM_PHY_ONFI_NVDDR2 *NVMController,
@@ -44,6 +46,7 @@ public:
     void Report_results_in_XML(std::string name_prefix, Utils::XmlWriter &xmlwriter);
 
 private:
+    bool local_read_die_admission = false;
     Flash_Transaction_Queue ***UserReadTRQueue;
     Flash_Transaction_Queue ***UserWriteTRQueue;
     Flash_Transaction_Queue **GCReadTRQueue;

@@ -128,6 +128,12 @@ namespace SSD_Components {
 		channels[page_address.ChannelID]->Chips[page_address.ChipID]->Change_memory_status_preconditioning(&page_address, &lpa);
 	}
 	
+    bool NVM_PHY_ONFI_NVDDR2::Is_die_free(const NVM::FlashMemory::Physical_Page_Address& address) const
+    {
+        const auto& die = bookKeepingTable[address.ChannelID][address.ChipID].Die_book_keeping_records[address.DieID];
+        return die.Free && !die.Suspended;
+    }
+
 	void NVM_PHY_ONFI_NVDDR2::Send_command_to_chip(std::list<NVM_Transaction_Flash*>& transaction_list)
 	{
 		ONFI_Channel_NVDDR2* target_channel = channels[transaction_list.front()->Address.ChannelID];
@@ -180,6 +186,14 @@ namespace SSD_Components {
 
 		switch (transaction_list.front()->Type) {
 			case Transaction_Type::READ:
+                if (MQSimObservation::read_queue_sink) {
+                    for (const auto* tr : transaction_list) {
+                        const auto& a = tr->Address;
+                        MQSimObservation::read_queue_sink(true, {Simulator->Time(),
+                            tr->Local_transaction_id, tr->LPA, tr->Data_and_metadata_size_in_byte,
+                            a.ChannelID, a.ChipID, a.DieID, a.PlaneID, a.BlockID, a.PageID});
+                    }
+                }
 				if (transaction_list.size() == 1) {
 					Stats::IssuedReadCMD++;
 					dieBKE->ActiveCommand->CommandCode = CMD_READ_PAGE;
