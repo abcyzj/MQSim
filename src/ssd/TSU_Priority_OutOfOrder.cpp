@@ -418,18 +418,24 @@ bool TSU_Priority_OutOfOrder::service_read_transaction(NVM::FlashMemory::Flash_C
     case ChipStatus::READING:
     case ChipStatus::WAIT_FOR_DATA_OUT:
     {
-        if (!local_read_die_admission || _NVMController->HasSuspendedCommand(chip))
+        if ((!local_read_die_admission && !host_read_die_admission) ||
+            _NVMController->HasSuspendedCommand(chip))
             return false;
 
         // A free target die has no command, pending data-out or suspended operation.
         // The existing channel-idle entry points and PHY still serialize bus service.
         auto next = std::find_if(sourceQueue1->begin(), sourceQueue1->end(), [this](const auto* tr) {
-            return tr->Local_transaction_id && _NVMController->Is_die_free(tr->Address);
+            const auto* request = tr->UserIORequest;
+            const bool local_read = local_read_die_admission && tr->Local_transaction_id;
+            const bool host_read = host_read_die_admission && tr->Source == Transaction_Source_Type::USERIO &&
+                request && request->Completion_route == RequestCompletionRoute::HOST &&
+                request->Type == UserRequestType::READ;
+            return (local_read || host_read) && _NVMController->Is_die_free(tr->Address);
         });
         if (next == sourceQueue1->end())
             return false;
 
-        // Keep the prototype on single-page local reads while the chip is busy.
+        // Issue one page transaction while the chip is busy.
         transaction_dispatch_slots.push_back(*next);
         sourceQueue1->remove(next);
         _NVMController->Send_command_to_chip(transaction_dispatch_slots);
